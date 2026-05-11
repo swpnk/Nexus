@@ -7,6 +7,7 @@ from nexus.providers.openai import OpenAIProvider
 
 
 def get_provider(name: str, settings: Settings) -> LLMProvider:
+    """Build an LLM provider from a configured provider name."""
     normalized_name = name.lower()
     if normalized_name == "anthropic":
         return AnthropicProvider(

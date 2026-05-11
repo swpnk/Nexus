@@ -7,6 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Fail-fast application settings loaded from environment variables."""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
@@ -27,6 +29,7 @@ class Settings(BaseSettings):
     )
     @classmethod
     def require_non_empty(cls, value: str) -> str:
+        """Reject required string settings that are present but blank."""
         if not value.strip():
             raise ValueError("must not be empty")
         return value
