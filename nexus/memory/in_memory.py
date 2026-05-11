@@ -6,11 +6,15 @@ from nexus.memory.base import MemoryEntry, MemoryScope
 
 
 class InMemoryStore:
+    """Session-scoped in-process MemoryStore implementation."""
+
     def __init__(self) -> None:
+        """Create an empty in-memory store."""
         self._entries: dict[str, MemoryEntry] = {}
         self._logger = structlog.get_logger()
 
     def store(self, key: str, entry: MemoryEntry) -> None:
+        """Store a SESSION entry under a namespaced key."""
         self._ensure_supported_scope(entry.scope)
         storage_key = self._storage_key(key, entry.scope, entry.session_id)
         self._entries[storage_key] = entry
@@ -27,6 +31,7 @@ class InMemoryStore:
         scope: MemoryScope,
         session_id: str,
     ) -> MemoryEntry | None:
+        """Retrieve a SESSION entry and evict it first when expired."""
         self._ensure_supported_scope(scope)
         storage_key = self._storage_key(key, scope, session_id)
         entry = self._entries.get(storage_key)
@@ -65,6 +70,7 @@ class InMemoryStore:
         session_id: str,
         top_k: int = 5,
     ) -> list[MemoryEntry]:
+        """Return recent non-expired SESSION entries for one session."""
         self._ensure_supported_scope(scope)
         prefix = self._storage_prefix(scope, session_id)
         entries = [
@@ -75,6 +81,7 @@ class InMemoryStore:
         return sorted(entries, key=lambda entry: entry.created_at, reverse=True)[:top_k]
 
     def evict(self, scope: MemoryScope, session_id: str) -> int:
+        """Delete expired SESSION entries for one session."""
         self._ensure_supported_scope(scope)
         prefix = self._storage_prefix(scope, session_id)
         expired_keys = [
@@ -96,14 +103,17 @@ class InMemoryStore:
 
     @staticmethod
     def _storage_key(key: str, scope: MemoryScope, session_id: str) -> str:
+        """Build the internal namespaced storage key."""
         return f"{scope.value}:{session_id}:{key}"
 
     @staticmethod
     def _storage_prefix(scope: MemoryScope, session_id: str) -> str:
+        """Build the internal namespace prefix for session scans."""
         return f"{scope.value}:{session_id}:"
 
     @staticmethod
     def _ensure_supported_scope(scope: MemoryScope) -> None:
+        """Raise for memory tiers intentionally deferred to Day 6."""
         if scope is MemoryScope.USER:
             raise NotImplementedError("USER scope requires vector backend — see Day 6")
         if scope is MemoryScope.AGENT:

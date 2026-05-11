@@ -7,6 +7,8 @@ from typing import Protocol, runtime_checkable
 
 
 class MemoryScope(StrEnum):
+    """Trust boundary that determines where a memory entry is visible."""
+
     SESSION = "session"
     USER = "user"
     AGENT = "agent"
@@ -15,6 +17,8 @@ class MemoryScope(StrEnum):
 
 @dataclass(frozen=True)
 class MemoryEntry:
+    """Stored memory value with mandatory scope and writer metadata."""
+
     content: str
     scope: MemoryScope
     agent_id: str
@@ -23,6 +27,7 @@ class MemoryEntry:
     ttl_seconds: int | None = None
 
     def is_expired(self) -> bool:
+        """Return True when this entry's TTL has elapsed."""
         if self.ttl_seconds is None:
             return False
         return datetime.now(UTC) - self.created_at > timedelta(seconds=self.ttl_seconds)
@@ -30,14 +35,20 @@ class MemoryEntry:
 
 @runtime_checkable
 class MemoryStore(Protocol):
-    def store(self, key: str, entry: MemoryEntry) -> None: ...
+    """Structural contract for scoped memory backends."""
+
+    def store(self, key: str, entry: MemoryEntry) -> None:
+        """Persist a memory entry under a caller-provided key."""
+        ...
 
     def retrieve(
         self,
         key: str,
         scope: MemoryScope,
         session_id: str,
-    ) -> MemoryEntry | None: ...
+    ) -> MemoryEntry | None:
+        """Return a scoped entry by exact key, or None when absent or expired."""
+        ...
 
     def search(
         self,
@@ -45,6 +56,10 @@ class MemoryStore(Protocol):
         scope: MemoryScope,
         session_id: str,
         top_k: int = 5,
-    ) -> list[MemoryEntry]: ...
+    ) -> list[MemoryEntry]:
+        """Return up to top_k scoped entries matching the backend search policy."""
+        ...
 
-    def evict(self, scope: MemoryScope, session_id: str) -> int: ...
+    def evict(self, scope: MemoryScope, session_id: str) -> int:
+        """Remove expired entries for a scope and return the removal count."""
+        ...
