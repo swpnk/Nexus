@@ -4,11 +4,14 @@ from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from enum import StrEnum
 from time import perf_counter
-from typing import Any, final
+from typing import TYPE_CHECKING, Any, final
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from nexus.providers.base import LLMProvider
+
+if TYPE_CHECKING:
+    from nexus.memory.base import MemoryStore
 
 
 def utc_now() -> datetime:
@@ -55,12 +58,20 @@ class AgentResult(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     duration_ms: float = 0.0
     created_at: datetime = Field(default_factory=utc_now)
+    reasoning_steps: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
 
 
 class BaseAgent(ABC):
-    def __init__(self, context: AgentContext, provider: LLMProvider) -> None:
+    def __init__(
+        self,
+        context: AgentContext,
+        provider: LLMProvider,
+        memory: MemoryStore | None = None,
+    ) -> None:
         self.context = context
         self.provider = provider
+        self.memory = memory
         self.state = AgentState.IDLE
 
     @final
