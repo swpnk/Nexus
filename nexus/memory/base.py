@@ -26,6 +26,11 @@ class MemoryEntry:
     created_at: datetime
     ttl_seconds: int | None = None
 
+    def __post_init__(self) -> None:
+        """Validate that created_at satisfies the framework UTC invariant."""
+        if self.created_at.tzinfo is None or self.created_at.utcoffset() != timedelta(0):
+            raise ValueError("created_at must be timezone-aware UTC")
+
     def is_expired(self) -> bool:
         """Return True when this entry's TTL has elapsed."""
         if self.ttl_seconds is None:

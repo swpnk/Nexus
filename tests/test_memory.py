@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from time import sleep
+
+import pytest
 
 from nexus.core.agent import AgentContext, AgentResult, BaseAgent
 from nexus.memory import InMemoryStore, MemoryEntry, MemoryScope
@@ -70,6 +71,11 @@ def test_retrieve_nonexistent_key_returns_none() -> None:
     assert store.retrieve("missing", MemoryScope.SESSION, "s1") is None
 
 
+def test_memory_entry_requires_timezone_aware_utc_created_at() -> None:
+    with pytest.raises(ValueError, match="created_at must be timezone-aware UTC"):
+        make_entry("value", created_at=datetime.utcnow())
+
+
 def test_user_scope_raises_not_implemented() -> None:
     store = InMemoryStore()
 
@@ -105,10 +111,13 @@ def test_global_scope_raises_not_implemented() -> None:
 
 def test_expired_entry_returns_none() -> None:
     store = InMemoryStore()
-    entry = make_entry("value", ttl_seconds=1)
+    entry = make_entry(
+        "value",
+        created_at=datetime.now(UTC) - timedelta(seconds=2),
+        ttl_seconds=1,
+    )
 
     store.store("k1", entry)
-    sleep(2)
 
     assert store.retrieve("k1", MemoryScope.SESSION, "s1") is None
 
@@ -172,9 +181,15 @@ def test_search_returns_most_recent_first() -> None:
 
 def test_evict_removes_expired_entries_only() -> None:
     store = InMemoryStore()
-    store.store("expired", make_entry("expired", ttl_seconds=1))
+    store.store(
+        "expired",
+        make_entry(
+            "expired",
+            created_at=datetime.now(UTC) - timedelta(seconds=2),
+            ttl_seconds=1,
+        ),
+    )
     store.store("fresh", make_entry("fresh", ttl_seconds=60))
-    sleep(2)
 
     count = store.evict(MemoryScope.SESSION, "s1")
 
@@ -186,8 +201,14 @@ def test_evict_removes_expired_entries_only() -> None:
 def test_evict_returns_count_of_evicted() -> None:
     store = InMemoryStore()
     for index in range(3):
-        store.store(f"k{index}", make_entry(f"value-{index}", ttl_seconds=1))
-    sleep(2)
+        store.store(
+            f"k{index}",
+            make_entry(
+                f"value-{index}",
+                created_at=datetime.now(UTC) - timedelta(seconds=2),
+                ttl_seconds=1,
+            ),
+        )
 
     assert store.evict(MemoryScope.SESSION, "s1") == 3
 
