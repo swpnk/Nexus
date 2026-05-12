@@ -12,6 +12,7 @@ def add_agent_context(
     method_name: str,
     event_dict: EventDict,
 ) -> EventDict:
+    """Attach standard agent fields to a structlog event when available."""
     agent = event_dict.pop("agent_instance", None)
     if agent is not None:
         event_dict["agent"] = agent.__class__.__name__
@@ -21,6 +22,7 @@ def add_agent_context(
 
 
 def configure_logging(log_level: str = "INFO") -> None:
+    """Configure structlog JSON logging with UTC timestamps and log level filtering."""
     logging.basicConfig(level=log_level.upper(), format="%(message)s")
     structlog.configure(
         processors=[
@@ -37,4 +39,5 @@ def configure_logging(log_level: str = "INFO") -> None:
 
 
 def get_agent_logger(agent: Any) -> structlog.stdlib.BoundLogger:
+    """Return a structlog logger bound to an agent instance."""
     return cast(structlog.stdlib.BoundLogger, structlog.get_logger().bind(agent_instance=agent))

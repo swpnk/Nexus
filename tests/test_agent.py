@@ -197,6 +197,18 @@ def test_agent_result_created_at_is_timezone_aware_utc() -> None:
     assert result.created_at.tzinfo is UTC
 
 
+def test_agent_result_reasoning_steps_default_to_empty_list() -> None:
+    result = AgentResult(output="ok", success=True)
+
+    assert result.reasoning_steps == []
+
+
+def test_agent_result_evidence_defaults_to_empty_list() -> None:
+    result = AgentResult(output="ok", success=True)
+
+    assert result.evidence == []
+
+
 @pytest.mark.asyncio
 async def test_duration_ms_is_positive_after_run(
     context: AgentContext, provider: FakeProvider
