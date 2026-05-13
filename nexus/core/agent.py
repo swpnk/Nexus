@@ -12,6 +12,7 @@ from nexus.providers.base import LLMProvider
 
 if TYPE_CHECKING:
     from nexus.memory.base import MemoryStore
+    from nexus.tools.registry import ToolRegistry
 
 
 def utc_now() -> datetime:
@@ -79,11 +80,13 @@ class BaseAgent(ABC):
         context: AgentContext,
         provider: LLMProvider,
         memory: MemoryStore | None = None,
+        tool_registry: ToolRegistry | None = None,
     ) -> None:
-        """Create an agent with runtime context, provider, and optional memory."""
+        """Create an agent with runtime context and injected dependencies."""
         self.context = context
         self.provider = provider
         self.memory = memory
+        self._tool_registry = tool_registry
         self.state = AgentState.IDLE
 
     @final
