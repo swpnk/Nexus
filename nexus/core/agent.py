@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any, final
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from nexus.observability.schema import TraceEvent, TraceEventType, generate_trace_id
+from nexus.observability.tracer import NoOpTracer, Tracer
 from nexus.providers.base import LLMProvider
 
 if TYPE_CHECKING:
@@ -55,6 +57,8 @@ class AgentContext(BaseModel):
     task: str
     config: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
+    trace_id: str | None = None
+    root_span_id: str | None = None
 
 
 class AgentResult(BaseModel):
@@ -81,33 +85,87 @@ class BaseAgent(ABC):
         provider: LLMProvider,
         memory: MemoryStore | None = None,
         tool_registry: ToolRegistry | None = None,
+        *,
+        tracer: Tracer | None = None,
     ) -> None:
         """Create an agent with runtime context and injected dependencies."""
         self.context = context
         self.provider = provider
         self.memory = memory
         self._tool_registry = tool_registry
+        self.tracer: Tracer = tracer if tracer is not None else NoOpTracer()
         self.state = AgentState.IDLE
 
     @final
     async def run(self) -> AgentResult:
         """Run the final lifecycle wrapper and always return an AgentResult."""
         self._transition(AgentState.RUNNING)
+        trace_id = generate_trace_id()
+        root_span_id = self.tracer.start_span(
+            trace_id=trace_id,
+            agent_id=self.context.agent_id,
+            parent_span_id=None,
+        )
+        self.context = self.context.model_copy(
+            update={"trace_id": trace_id, "root_span_id": root_span_id}
+        )
+        self.tracer.record_event(
+            root_span_id,
+            TraceEvent(
+                trace_id=trace_id,
+                span_id=root_span_id,
+                event_type=TraceEventType.AGENT_START,
+                agent_id=self.context.agent_id,
+                timestamp=utc_now(),
+                payload={"input": str(self.context.task)[:500]},
+            ),
+        )
         start = perf_counter()
 
         try:
             result = await self.execute()
+            duration_ms = self._duration_ms_since(start)
+            self.tracer.record_event(
+                root_span_id,
+                TraceEvent(
+                    trace_id=trace_id,
+                    span_id=root_span_id,
+                    event_type=TraceEventType.AGENT_COMPLETE,
+                    agent_id=self.context.agent_id,
+                    timestamp=utc_now(),
+                    duration_ms=duration_ms,
+                    payload={"success": result.success},
+                ),
+            )
+            self.tracer.end_span(root_span_id, "complete", duration_ms)
             self._transition(AgentState.DONE)
-            result.duration_ms = self._duration_ms_since(start)
+            result.duration_ms = duration_ms
             return result
         except Exception as exc:
+            duration_ms = self._duration_ms_since(start)
+            self.tracer.record_event(
+                root_span_id,
+                TraceEvent(
+                    trace_id=trace_id,
+                    span_id=root_span_id,
+                    event_type=TraceEventType.AGENT_ERROR,
+                    agent_id=self.context.agent_id,
+                    timestamp=utc_now(),
+                    duration_ms=duration_ms,
+                    payload={
+                        "error_type": type(exc).__name__,
+                        "error_msg": str(exc)[:500],
+                    },
+                ),
+            )
+            self.tracer.end_span(root_span_id, "error", duration_ms)
             self._transition(AgentState.FAILED)
             self.logger().exception("agent execution failed", error=str(exc))
             return AgentResult(
                 output="",
                 success=False,
                 error=str(exc),
-                duration_ms=self._duration_ms_since(start),
+                duration_ms=duration_ms,
             )
         finally:
             self.cleanup()
