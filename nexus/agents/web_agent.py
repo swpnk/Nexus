@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from nexus.core.agent import AgentContext, AgentResult, BaseAgent, utc_now
+from nexus.core.circuit_breaker import CircuitBreaker, CircuitOpenError
 from nexus.memory.base import MemoryStore
 from nexus.observability.schema import TraceEvent, TraceEventType
 from nexus.observability.tracer import Tracer
@@ -23,6 +24,7 @@ class WebAgent(BaseAgent):
         tool_registry: ToolRegistry | None = None,
         max_results: int = 5,
         tracer: Tracer | None = None,
+        circuit_breaker: CircuitBreaker | None = None,
     ) -> None:
         """Create a web agent with network tool permission."""
         super().__init__(
@@ -33,6 +35,7 @@ class WebAgent(BaseAgent):
             tracer=tracer,
         )
         self.max_results = max_results
+        self._circuit_breaker = circuit_breaker
         self.agent_permissions = {ToolPermission.NETWORK}
 
     async def execute(self) -> AgentResult:
@@ -67,11 +70,50 @@ class WebAgent(BaseAgent):
             )
             tool_start = utc_now()
 
-        tool_result = await self._tool_registry.execute(
-            tool_name,
-            inputs,
-            self.agent_permissions,
-        )
+        try:
+            if self._circuit_breaker is not None:
+                tool_result = await self._circuit_breaker.call(
+                    self._tool_registry.execute,
+                    tool_name,
+                    inputs,
+                    self.agent_permissions,
+                )
+            else:
+                tool_result = await self._tool_registry.execute(
+                    tool_name,
+                    inputs,
+                    self.agent_permissions,
+                )
+        except CircuitOpenError as exc:
+            if tracing and tool_span_id is not None:
+                assert self.context.trace_id is not None
+                assert self.context.root_span_id is not None
+                assert tool_start is not None
+                tool_duration_ms = (utc_now() - tool_start).total_seconds() * 1000
+                self.tracer.record_event(
+                    tool_span_id,
+                    TraceEvent(
+                        trace_id=self.context.trace_id,
+                        span_id=tool_span_id,
+                        parent_span_id=self.context.root_span_id,
+                        event_type=TraceEventType.TOOL_RESULT,
+                        agent_id=self.context.agent_id,
+                        timestamp=utc_now(),
+                        duration_ms=tool_duration_ms,
+                        payload={"success": False, "circuit_open": True},
+                    ),
+                )
+                self.tracer.end_span(tool_span_id, "error", tool_duration_ms)
+            breaker_name = exc.breaker_name
+            return AgentResult(
+                output="",
+                success=False,
+                error=f"Circuit breaker open: {tool_name}. Service degraded.",
+                reasoning_steps=[
+                    f"Circuit breaker '{breaker_name}' tripped; retry after "
+                    f"{exc.retry_after.isoformat()}."
+                ],
+            )
 
         if tracing and tool_span_id is not None:
             assert self.context.trace_id is not None
