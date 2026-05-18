@@ -73,7 +73,7 @@ class AgentResult(BaseModel):
     duration_ms: float = 0.0
     created_at: datetime = Field(default_factory=utc_now)
     reasoning_steps: list[str] = Field(default_factory=list)
-    evidence: list[str] = Field(default_factory=list)
+    evidence: list[Any] = Field(default_factory=list)
 
 
 class BaseAgent(ABC):
