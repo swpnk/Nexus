@@ -8,6 +8,7 @@ dependencies = [
     "anthropic",
     "openai",
     "pydantic-settings",
+    "pypdf",
     "structlog",
 ]
 
